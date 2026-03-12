@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { 
   Shield, ShieldAlert, ShieldCheck, Search, AlertTriangle, 
   Activity, Info, ArrowRight, Clock, X, Terminal, Zap,
-  Database, Globe, Cpu, FileText
+  Database, Globe, Cpu, FileText, Home
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { analyzeUrl, AnalysisResult } from '@/lib/gemini';
@@ -158,20 +158,29 @@ export default function UrlAnalyzer() {
 
       {/* Header */}
       <header className="max-w-6xl mx-auto px-6 mb-12 flex items-center justify-between relative z-10">
-        <div className="flex items-center gap-3">
-          <div className="bg-indigo-500/20 p-1.5 rounded-lg border border-indigo-500/30">
+        <Link href="/" className="flex items-center gap-3 group transition-transform hover:scale-[1.02]">
+          <div className="bg-indigo-500/20 p-1.5 rounded-lg border border-indigo-500/30 group-hover:border-indigo-500/50 transition-colors">
             <Shield className="w-6 h-6 text-indigo-400" />
           </div>
-          <h1 className="font-bold text-xl tracking-tight text-white">Trustify <span className="text-indigo-400 font-medium">URL Checker</span></h1>
-        </div>
+          <h1 className="font-bold text-xl tracking-tight text-white group-hover:text-indigo-100 transition-colors">Trustify <span className="text-indigo-400 font-medium">URL Checker</span></h1>
+        </Link>
         
-        <button 
-          onClick={() => setShowEduModal(true)}
-          className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-sm font-medium text-slate-300"
-        >
-          <Info className="w-4 h-4" />
-          How it Works
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-sm font-medium text-slate-300"
+          >
+            <Home className="w-4 h-4" />
+            Home
+          </Link>
+          <button 
+            onClick={() => setShowEduModal(true)}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-sm font-medium text-slate-300"
+          >
+            <Info className="w-4 h-4" />
+            How it Works
+          </button>
+        </div>
       </header>
 
       <main className="relative max-w-5xl mx-auto px-6 pb-20 z-10">
