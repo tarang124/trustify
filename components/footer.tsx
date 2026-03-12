@@ -13,7 +13,7 @@ export function Footer() {
                 <Shield className="size-5 text-primary" />
               </div>
               <span className="text-lg font-bold tracking-tight text-foreground">
-                Cyber<span className="text-primary">Guard</span>
+                Trust<span className="text-primary">ify</span>
               </span>
             </div>
             <p className="text-sm leading-relaxed text-muted-foreground max-w-xs">
