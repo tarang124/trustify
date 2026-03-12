@@ -3,7 +3,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* CyberGuard: Dark Navy + Electric Blue theme — always dark */
+/* Trustify: Dark Navy + Electric Blue theme — always dark */
 :root {
   --background: #070b1a;
   --foreground: #e2e8f0;
