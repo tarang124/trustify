@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Report {
+  id            String            @id @default(cuid())
+  createdAt     DateTime          @default(now())
+  platform      String?
+  suspiciousUrl String?
+
+  enrichmentId  String?
+  enrichment    EnrichmentResult? @relation(fields: [enrichmentId], references: [id])
+}
+
+model EnrichmentResult {
+  id               String   @id @default(cuid())
+  normalizedTarget String   @unique
+  targetType       String   // 'url' | 'ip'
+  createdAt        DateTime @default(now())
+  lastCheckedAt    DateTime @default(now())
+  overallStatus    String   @default("pending")
+
+  // --- WHOIS ---
+  whoisStatus    String    @default("pending")
+  whoisData      String? // JSON-serialized WhoisResult
+  whoisError     String?
+  whoisCheckedAt DateTime?
+
+  // --- GeoIP ---
+  geoipStatus    String    @default("pending")
+  geoipData      String? // JSON-serialized GeoIpResult
+  geoipError     String?
+  geoipCheckedAt DateTime?
+
+  // --- SSL Certificate ---
+  sslStatus    String    @default("pending")
+  sslData      String? // JSON-serialized SslResult
+  sslError     String?
+  sslCheckedAt DateTime?
+
+  // --- VirusTotal ---
+  vtStatus    String    @default("pending")
+  vtData      String? // JSON-serialized VirusTotalResult
+  vtError     String?
+  vtCheckedAt DateTime?
+
+  // --- Screenshot (extension point — not implemented yet) ---
+  screenshotStatus    String    @default("pending")
+  screenshotData      String? // JSON-serialized ScreenshotResult
+  screenshotError     String?
+  screenshotCheckedAt DateTime?
+
+  // --- Relations ---
+  reports Report[]
+}
