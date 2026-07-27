@@ -43,75 +43,15 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET /api/enrich?id=<enrichmentId>&target=<normalizedTarget>
+ * GET /api/enrich
  *
- * Fetch a cached enrichment result by ID or normalised target.
- * Useful for polling status or retrieving cached data.
+ * Without a persistent database, cached lookups are not available.
+ * Use POST to run a fresh enrichment.
  */
-export async function GET(request: NextRequest) {
-  const { searchParams } = request.nextUrl
-  const id = searchParams.get("id")
-  const target = searchParams.get("target")
-
-  try {
-    let record
-    if (id) {
-      record = await prisma.enrichmentResult.findUnique({ where: { id } })
-    } else if (target) {
-      record = await prisma.enrichmentResult.findUnique({
-        where: { normalizedTarget: target.trim().toLowerCase() },
-      })
-    }
-
-    if (!record) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    }
-
-    const parseJson = (raw: string | null) =>
-      raw ? JSON.parse(raw) : null
-
-    return NextResponse.json({
-      id: record.id,
-      normalizedTarget: record.normalizedTarget,
-      targetType: record.targetType,
-      overallStatus: record.overallStatus,
-      lastCheckedAt: record.lastCheckedAt.toISOString(),
-      cached: true,
-      whois: {
-        status: record.whoisStatus,
-        data: parseJson(record.whoisData),
-        error: record.whoisError,
-        checkedAt: record.whoisCheckedAt?.toISOString() ?? null,
-      },
-      geoip: {
-        status: record.geoipStatus,
-        data: parseJson(record.geoipData),
-        error: record.geoipError,
-        checkedAt: record.geoipCheckedAt?.toISOString() ?? null,
-      },
-      ssl: {
-        status: record.sslStatus,
-        data: parseJson(record.sslData),
-        error: record.sslError,
-        checkedAt: record.sslCheckedAt?.toISOString() ?? null,
-      },
-      virustotal: {
-        status: record.vtStatus,
-        data: parseJson(record.vtData),
-        error: record.vtError,
-        checkedAt: record.vtCheckedAt?.toISOString() ?? null,
-      },
-      screenshot: {
-        status: record.screenshotStatus,
-        data: parseJson(record.screenshotData),
-        error: record.screenshotError,
-        checkedAt: record.screenshotCheckedAt?.toISOString() ?? null,
-      },
-    })
-  } catch (err: unknown) {
-    console.error("[Enrichment GET Error]", err)
-    const message =
-      err instanceof Error ? err.message : "Failed to fetch"
-    return NextResponse.json({ error: message }, { status: 500 })
-  }
+export async function GET() {
+  return NextResponse.json(
+    { error: "Use POST /api/enrich with { url: '...' } to run enrichment" },
+    { status: 405 }
+  )
 }
+

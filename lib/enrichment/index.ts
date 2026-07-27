@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma"
 import type {
   EnrichmentResponse,
   EnrichmentStatus,
@@ -7,17 +6,6 @@ import { lookupWhois } from "./whois"
 import { lookupGeoIp } from "./geoip"
 import { checkSsl } from "./ssl"
 import { checkVirusTotal } from "./virustotal"
-
-// ─── Cache TTLs (hours) ───────────────────────────────────────
-// WHOIS / GeoIP: domain info and IP location rarely change
-// SSL: certificates can be reissued, check daily
-// VirusTotal: reputation can change, 24-48 h window
-const CACHE_TTL: Record<string, number> = {
-  whois: 7 * 24,
-  geoip: 7 * 24,
-  ssl: 24,
-  virustotal: 36,
-}
 
 // ─── Normalisation ────────────────────────────────────────────
 
@@ -51,250 +39,108 @@ function normalizeTarget(input: string): NormalizedTarget {
   }
 }
 
-function isStale(checkedAt: Date | null, ttlHours: number): boolean {
-  if (!checkedAt) return true
-  return Date.now() - checkedAt.getTime() > ttlHours * 3_600_000
-}
-
 // ─── Public API ───────────────────────────────────────────────
 
 /**
- * Main entry-point: normalise the target, check the DB cache,
- * run any stale / missing modules concurrently, persist results,
+ * Main entry-point: normalise the target, run all modules concurrently,
  * and return the full enrichment response.
+ *
+ * This version runs without a database — no caching, direct execution.
+ * Each call re-runs all modules fresh.
  */
 export async function runEnrichment(
   targetInput: string,
-  reportId?: string
+  _reportId?: string
 ): Promise<EnrichmentResponse> {
   const { normalized, type, originalUrl } = normalizeTarget(targetInput)
 
-  // ── 1. Look up the cache ──────────────────────────────────
-  let record = await prisma.enrichmentResult.findUnique({
-    where: { normalizedTarget: normalized },
-  })
+  // ── Run all modules concurrently ──────────────────────────
+  const [whoisResult, geoipResult, sslResult, vtResult] =
+    await Promise.allSettled([
+      lookupWhois(normalized),
+      lookupGeoIp(normalized),
+      type === "url" ? checkSsl(normalized) : Promise.resolve(null),
+      checkVirusTotal(originalUrl),
+    ])
 
-  // ── 2. Determine which modules need running ───────────────
-  const needsWhois =
-    !record ||
-    record.whoisStatus === "pending" ||
-    record.whoisStatus === "failed" ||
-    isStale(record.whoisCheckedAt, CACHE_TTL.whois)
+  const now = new Date().toISOString()
 
-  const needsGeoip =
-    !record ||
-    record.geoipStatus === "pending" ||
-    record.geoipStatus === "failed" ||
-    isStale(record.geoipCheckedAt, CACHE_TTL.geoip)
-
-  const needsSsl =
-    type === "url" &&
-    (!record ||
-      record.sslStatus === "pending" ||
-      record.sslStatus === "failed" ||
-      isStale(record.sslCheckedAt, CACHE_TTL.ssl))
-
-  const needsVt =
-    !record ||
-    record.vtStatus === "pending" ||
-    (record.vtStatus === "failed" &&
-      record.vtError !==
-        "VIRUSTOTAL_API_KEY environment variable is not set") ||
-    isStale(record.vtCheckedAt, CACHE_TTL.virustotal)
-
-  const anythingNeeded = needsWhois || needsGeoip || needsSsl || needsVt
-
-  // ── 3. Create or mark running ─────────────────────────────
-  if (!record) {
-    record = await prisma.enrichmentResult.create({
-      data: {
-        normalizedTarget: normalized,
-        targetType: type,
-        overallStatus: "running",
-      },
-    })
-  } else if (anythingNeeded) {
-    record = await prisma.enrichmentResult.update({
-      where: { id: record.id },
-      data: { overallStatus: "running", lastCheckedAt: new Date() },
-    })
+  // ── Build module responses ────────────────────────────────
+  function buildModule<T>(
+    settled: PromiseSettledResult<T | null>,
+    skipModule = false
+  ): {
+    status: EnrichmentStatus
+    data: T | null
+    error: string | null
+    checkedAt: string | null
+  } {
+    if (skipModule) {
+      return { status: "pending", data: null, error: null, checkedAt: null }
+    }
+    if (settled.status === "fulfilled") {
+      if (settled.value === null) {
+        return { status: "pending", data: null, error: null, checkedAt: null }
+      }
+      return {
+        status: "completed",
+        data: settled.value,
+        error: null,
+        checkedAt: now,
+      }
+    }
+    const errMsg =
+      settled.reason instanceof Error
+        ? settled.reason.message
+        : "Unknown error"
+    return {
+      status: errMsg === "RATE_LIMITED" ? "rate_limited" : "failed",
+      data: null,
+      error: errMsg,
+      checkedAt: now,
+    }
   }
 
-  // ── 4. Link to report ─────────────────────────────────────
-  if (reportId) {
-    await prisma.report
-      .update({
-        where: { id: reportId },
-        data: { enrichmentId: record.id },
-      })
-      .catch(() => {
-        /* report may not exist yet — ignore */
-      })
-  }
+  const whois = buildModule(whoisResult)
+  const geoip = buildModule(geoipResult)
+  const ssl = buildModule(sslResult, type !== "url")
+  const virustotal = buildModule(vtResult)
 
-  // ── 5. Run modules concurrently ───────────────────────────
-  const tasks: Promise<void>[] = []
-
-  if (needsWhois) {
-    tasks.push(runModule("whois", record.id, () => lookupWhois(normalized)))
-  }
-  if (needsGeoip) {
-    tasks.push(runModule("geoip", record.id, () => lookupGeoIp(normalized)))
-  }
-  if (needsSsl) {
-    tasks.push(runModule("ssl", record.id, () => checkSsl(normalized)))
-  }
-  if (needsVt) {
-    tasks.push(
-      runModule("virustotal", record.id, () => checkVirusTotal(originalUrl))
-    )
-  }
-
-  await Promise.allSettled(tasks)
-
-  // ── 6. Reload and compute overall status ──────────────────
-  const finalRecord = await prisma.enrichmentResult.findUniqueOrThrow({
-    where: { id: record.id },
-  })
-
-  const statuses = [
-    finalRecord.whoisStatus,
-    finalRecord.geoipStatus,
-    finalRecord.sslStatus,
-    finalRecord.vtStatus,
-  ]
-
-  let overallStatus: string = "completed"
+  // ── Compute overall status ────────────────────────────────
+  const statuses = [whois.status, geoip.status, ssl.status, virustotal.status]
+  let overallStatus: EnrichmentStatus | "partial" = "completed"
   if (statuses.some((s) => s === "running")) {
     overallStatus = "running"
-  } else if (statuses.every((s) => s === "failed" || s === "rate_limited")) {
+  } else if (
+    statuses
+      .filter((s) => s !== "pending")
+      .every((s) => s === "failed" || s === "rate_limited")
+  ) {
     overallStatus = "failed"
   } else if (
     statuses.some(
-      (s) => s === "failed" || s === "rate_limited" || s === "pending"
+      (s) => s === "failed" || s === "rate_limited"
     )
   ) {
     overallStatus = "partial"
   }
 
-  await prisma.enrichmentResult.update({
-    where: { id: finalRecord.id },
-    data: { overallStatus },
-  })
-
-  return formatResponse(finalRecord, overallStatus, !anythingNeeded)
-}
-
-// ─── Internal helpers ─────────────────────────────────────────
-
-type ModuleName = "whois" | "geoip" | "ssl" | "virustotal"
-
-const DB_COLUMN_MAP: Record<
-  ModuleName,
-  { status: string; data: string; error: string; checked: string }
-> = {
-  whois: {
-    status: "whoisStatus",
-    data: "whoisData",
-    error: "whoisError",
-    checked: "whoisCheckedAt",
-  },
-  geoip: {
-    status: "geoipStatus",
-    data: "geoipData",
-    error: "geoipError",
-    checked: "geoipCheckedAt",
-  },
-  ssl: {
-    status: "sslStatus",
-    data: "sslData",
-    error: "sslError",
-    checked: "sslCheckedAt",
-  },
-  virustotal: {
-    status: "vtStatus",
-    data: "vtData",
-    error: "vtError",
-    checked: "vtCheckedAt",
-  },
-}
-
-async function runModule(
-  name: ModuleName,
-  recordId: string,
-  fn: () => Promise<unknown>
-): Promise<void> {
-  const cols = DB_COLUMN_MAP[name]
-  try {
-    const result = await fn()
-    await prisma.enrichmentResult.update({
-      where: { id: recordId },
-      data: {
-        [cols.status]: "completed",
-        [cols.data]: JSON.stringify(result),
-        [cols.error]: null,
-        [cols.checked]: new Date(),
-      },
-    })
-  } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : "Unknown error"
-    await prisma.enrichmentResult.update({
-      where: { id: recordId },
-      data: {
-        [cols.status]: message === "RATE_LIMITED" ? "rate_limited" : "failed",
-        [cols.error]: message,
-        [cols.checked]: new Date(),
-      },
-    })
-  }
-}
-
-function formatResponse(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  record: any,
-  overallStatus: string,
-  cached: boolean
-): EnrichmentResponse {
-  const parseJson = (raw: string | null) =>
-    raw ? JSON.parse(raw) : null
-
   return {
-    id: record.id,
-    normalizedTarget: record.normalizedTarget,
-    targetType: record.targetType as "url" | "ip",
-    overallStatus: overallStatus as EnrichmentStatus | "partial",
-    lastCheckedAt: record.lastCheckedAt.toISOString(),
-    cached,
-    whois: {
-      status: record.whoisStatus as EnrichmentStatus,
-      data: parseJson(record.whoisData),
-      error: record.whoisError,
-      checkedAt: record.whoisCheckedAt?.toISOString() ?? null,
-    },
-    geoip: {
-      status: record.geoipStatus as EnrichmentStatus,
-      data: parseJson(record.geoipData),
-      error: record.geoipError,
-      checkedAt: record.geoipCheckedAt?.toISOString() ?? null,
-    },
-    ssl: {
-      status: record.sslStatus as EnrichmentStatus,
-      data: parseJson(record.sslData),
-      error: record.sslError,
-      checkedAt: record.sslCheckedAt?.toISOString() ?? null,
-    },
-    virustotal: {
-      status: record.vtStatus as EnrichmentStatus,
-      data: parseJson(record.vtData),
-      error: record.vtError,
-      checkedAt: record.vtCheckedAt?.toISOString() ?? null,
-    },
+    id: `enrich-${Date.now()}`,
+    normalizedTarget: normalized,
+    targetType: type,
+    overallStatus,
+    lastCheckedAt: now,
+    cached: false,
+    whois,
+    geoip,
+    ssl,
+    virustotal,
     screenshot: {
-      status: (record.screenshotStatus as EnrichmentStatus) || "pending",
-      data: parseJson(record.screenshotData),
-      error: record.screenshotError,
-      checkedAt: record.screenshotCheckedAt?.toISOString() ?? null,
+      status: "pending",
+      data: null,
+      error: null,
+      checkedAt: null,
     },
   }
 }
