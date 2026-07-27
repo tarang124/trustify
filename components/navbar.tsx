@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 
 const navLinks = [
   { href: "/", label: "Home" },
-  { href: "/scanner", label: "Scanner" },
+  { href: "/tools/threat-intel", label: "Tools" },
   { href: "/report", label: "Action Plan" },
   { href: "/resources", label: "Resources" },
 ]
@@ -52,7 +52,7 @@ export function Navbar() {
         {/* Desktop CTA */}
         <div className="hidden md:flex">
           <Button asChild size="sm">
-            <Link href="/scanner">Open Scanner</Link>
+            <Link href="/tools/threat-intel">Scan URL</Link>
           </Button>
         </div>
 
@@ -87,8 +87,8 @@ export function Navbar() {
             ))}
             <div className="mt-2 border-t border-border/60 pt-3">
               <Button asChild className="w-full" size="sm">
-                <Link href="/scanner" onClick={() => setMobileOpen(false)}>
-                  Open Scanner
+                <Link href="/tools/threat-intel" onClick={() => setMobileOpen(false)}>
+                  Scan URL
                 </Link>
               </Button>
             </div>

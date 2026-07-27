@@ -44,7 +44,7 @@ export function HeroSection() {
           {/* CTA Buttons */}
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Button asChild size="lg" className="text-base px-8 h-12 font-semibold shadow-[0_0_20px_rgba(99,102,241,0.2)] bg-indigo-600 hover:bg-indigo-500 text-white">
-              <Link href="/scanner">
+              <Link href="/tools/threat-intel">
                 Check URL Safety
                 <ArrowRight className="ml-2 size-5" />
               </Link>

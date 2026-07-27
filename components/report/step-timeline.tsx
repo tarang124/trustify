@@ -117,25 +117,6 @@ export function StepTimeline({ data, onChange }: StepTimelineProps) {
         onSelect={(v) => onChange({ clickedSuspiciousLink: v })}
       />
 
-      {data.clickedSuspiciousLink === "Yes" && (
-        <div className="flex flex-col gap-2.5 border-l-2 border-primary/30 pl-4 ml-1">
-          <label className="text-sm font-medium text-foreground">
-            Paste the suspicious URL or IP address{" "}
-            <span className="text-muted-foreground font-normal">(optional)</span>
-          </label>
-          <input
-            type="text"
-            value={data.suspiciousUrl}
-            onChange={(e) => onChange({ suspiciousUrl: e.target.value })}
-            placeholder="https://suspicious-site.com or 192.168.1.1"
-            className="flex h-10 w-full rounded-lg border border-border/60 bg-secondary/40 px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors"
-          />
-          <p className="text-xs text-muted-foreground">
-            We&apos;ll run threat intelligence checks (WHOIS, SSL, reputation) on this target.
-          </p>
-        </div>
-      )}
-
       <RadioGroup
         label="Did you download any file?"
         options={YES_NO_NOTSURE}

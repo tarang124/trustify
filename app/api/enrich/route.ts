@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
 import { runEnrichment } from "@/lib/enrichment"
 
 /**
@@ -29,16 +28,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create a report record to link enrichment to
-    let effectiveReportId = reportId
-    if (!effectiveReportId) {
-      const report = await prisma.report.create({
-        data: { suspiciousUrl: target },
-      })
-      effectiveReportId = report.id
-    }
+    // Only link to a report if reportId is provided (from the report flow)
+    // Standalone tool pages don't create report records
+    const result = await runEnrichment(target, reportId || undefined)
 
-    const result = await runEnrichment(target, effectiveReportId)
 
     return NextResponse.json(result)
   } catch (err: unknown) {

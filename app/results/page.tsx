@@ -1,12 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
-import { ThreatIntelPanel } from "@/components/results/threat-intel-panel"
-import type { EnrichmentResponse } from "@/lib/enrichment-types"
 import type { ReportFormData } from "@/lib/report-types"
 import { detectAttacks } from "@/lib/detect-attacks"
 import { SeveritySummary } from "@/components/results/severity-summary"
@@ -29,51 +27,15 @@ export default function ResultsPage() {
   const router = useRouter()
   const [data, setData] = useState<ReportFormData | null>(null)
   const [showReport, setShowReport] = useState(false)
-  const [enrichment, setEnrichment] = useState<EnrichmentResponse | null>(null)
-  const [enrichmentLoading, setEnrichmentLoading] = useState(false)
-  const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
-
-  const triggerEnrichment = useCallback(async (url: string) => {
-    setEnrichmentLoading(true)
-    setEnrichmentError(null)
-    try {
-      const res = await fetch("/api/enrich", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      })
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error || `Enrichment failed (${res.status})`)
-      }
-      const result: EnrichmentResponse = await res.json()
-      setEnrichment(result)
-      sessionStorage.setItem("trustify-enrichment", JSON.stringify(result))
-    } catch (err: unknown) {
-      setEnrichmentError(err instanceof Error ? err.message : "Enrichment failed")
-    } finally {
-      setEnrichmentLoading(false)
-    }
-  }, [])
 
   useEffect(() => {
     const stored = sessionStorage.getItem("trustify-report")
     if (stored) {
-      const parsed = JSON.parse(stored)
-      setData(parsed)
-      // Restore cached enrichment
-      const cachedEnrichment = sessionStorage.getItem("trustify-enrichment")
-      if (cachedEnrichment) {
-        setEnrichment(JSON.parse(cachedEnrichment))
-      }
-      // Trigger enrichment if a suspicious URL was provided
-      if (parsed.suspiciousUrl?.trim()) {
-        triggerEnrichment(parsed.suspiciousUrl)
-      }
+      setData(JSON.parse(stored))
     } else {
       router.push("/report")
     }
-  }, [router, triggerEnrichment])
+  }, [router])
 
   const attacks = useMemo(() => (data ? detectAttacks(data) : []), [data])
 
@@ -136,21 +98,7 @@ export default function ResultsPage() {
             {/* 2. Emergency Banner (only for critical/financial) */}
             <EmergencyBanner attacks={attacks} />
 
-            {/* 3. Threat Intelligence Panel (if URL was provided) */}
-            {(data.suspiciousUrl?.trim() || enrichment) && (
-              <ThreatIntelPanel
-                enrichment={enrichment}
-                isLoading={enrichmentLoading}
-                error={enrichmentError}
-                onRetry={() => {
-                  if (data.suspiciousUrl?.trim()) {
-                    triggerEnrichment(data.suspiciousUrl)
-                  }
-                }}
-              />
-            )}
-
-            {/* 4. Threat Cards */}
+            {/* 3. Threat Cards */}
             <section>
               <div className="mb-4 flex items-center gap-2">
                 <Scan className="size-4 text-primary" />
